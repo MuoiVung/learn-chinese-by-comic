@@ -9,9 +9,10 @@ import { generateSpeech, decode, decodeAudioData, getAudioContext } from '../ser
 // --- Single Vocabulary Item Card ---
 interface VocabularyItemCardProps {
     item: VocabularyItem;
+    addToast: (message: string, type?: 'info' | 'error') => void;
 }
 
-const VocabularyItemCard: FC<VocabularyItemCardProps> = ({ item }) => {
+const VocabularyItemCard: FC<VocabularyItemCardProps> = ({ item, addToast }) => {
     const [wordAudio, setWordAudio] = useState<AudioBuffer | null>(null);
     const [exampleAudio, setExampleAudio] = useState<AudioBuffer | null>(null);
     const [isLoadingWord, setIsLoadingWord] = useState(false);
@@ -26,8 +27,9 @@ const VocabularyItemCard: FC<VocabularyItemCardProps> = ({ item }) => {
             source.start();
         } catch (error) {
             console.error("Error playing audio:", error);
+            addToast("Lỗi khi phát âm thanh.", "error");
         }
-    }, []);
+    }, [addToast]);
 
     const handlePlay = useCallback(async (
         text: string, 
@@ -49,10 +51,11 @@ const VocabularyItemCard: FC<VocabularyItemCardProps> = ({ item }) => {
             playAudio(buffer);
         } catch (error) {
             console.error(`Failed to play audio for "${text}"`, error);
+            addToast(`Không thể tạo âm thanh cho: "${text}".`, 'error');
         } finally {
             setIsLoading(false);
         }
-    }, [playAudio]);
+    }, [playAudio, addToast]);
 
     const handleLookup = (word: string) => {
         const url = `https://hanzii.net/search/word/${encodeURIComponent(word)}?hl=vi`;
@@ -117,9 +120,10 @@ const VocabularyItemCard: FC<VocabularyItemCardProps> = ({ item }) => {
 // --- Main Vocabulary List ---
 interface VocabularyViewProps {
   vocabulary: VocabularyItem[];
+  addToast: (message: string, type?: 'info' | 'error') => void;
 }
 
-const VocabularyView: FC<VocabularyViewProps> = ({ vocabulary }) => {
+const VocabularyView: FC<VocabularyViewProps> = ({ vocabulary, addToast }) => {
     if (vocabulary.length === 0) {
         return null;
     }
@@ -131,7 +135,7 @@ const VocabularyView: FC<VocabularyViewProps> = ({ vocabulary }) => {
             </h2>
             <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {vocabulary.map((item) => (
-                    <VocabularyItemCard key={item.word} item={item} />
+                    <VocabularyItemCard key={item.word} item={item} addToast={addToast} />
                 ))}
             </ul>
         </div>

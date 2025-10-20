@@ -109,7 +109,7 @@ const App: FC = () => {
           </div>
         </div>
         
-        <VocabularyView vocabulary={vocabulary} />
+        <VocabularyView vocabulary={vocabulary} addToast={addToast} />
 
       </main>
       <ToastContainer toasts={toasts} onRemove={removeToast} />

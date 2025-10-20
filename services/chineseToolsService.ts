@@ -58,16 +58,41 @@ export const generateVocabularyDetails = async (words: string[]) => {
 };
 
 /**
- * Generates speech from text using the Gemini TTS API.
+ * A simple async retry helper function with exponential backoff.
+ * @param fn The async function to execute.
+ * @param retries Number of retries.
+ * @param delay Initial delay in ms.
+ * @returns A promise that resolves with the result of the function.
+ */
+const withRetry = async <T>(fn: () => Promise<T>, retries = 1, delay = 300): Promise<T> => {
+    try {
+        return await fn();
+    } catch (error) {
+        if (retries > 0) {
+            console.warn(`Operation failed, retrying in ${delay}ms... (${retries} retries left)`);
+            await new Promise(res => setTimeout(res, delay));
+            return withRetry(fn, retries - 1, delay * 2); // Exponential backoff
+        }
+        console.error("Operation failed after all retries.", error);
+        throw error;
+    }
+};
+
+
+/**
+ * Generates speech from text using the Gemini TTS API, with a retry mechanism.
  * @param text The text to convert to speech.
  * @returns A promise that resolves to a base64 encoded audio string.
  */
 export const generateSpeech = async (text: string): Promise<string> => {
-    const ai = getAi();
-    try {
+    const speechGenerationTask = async () => {
+        const ai = getAi();
+        // Fix: Add a clear instruction to the prompt to improve TTS reliability, especially for single words.
+        const instructionalPrompt = `Speak this clearly: ${text}`;
+
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text }] }],
+            contents: [{ parts: [{ text: instructionalPrompt }] }],
             config: {
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
@@ -79,11 +104,19 @@ export const generateSpeech = async (text: string): Promise<string> => {
         });
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (!base64Audio) {
-            throw new Error("No audio data returned from API.");
+            // Add more detailed logging for easier debugging in the future.
+            console.error("TTS API returned no audio data. Full response:", JSON.stringify(response, null, 2));
+            throw new Error(`API returned no audio data for text: "${text}"`);
         }
         return base64Audio;
+    };
+
+    try {
+        // Wrap the task with a retry mechanism. 1 retry means 2 total attempts.
+        return await withRetry(speechGenerationTask, 1, 300);
     } catch (error) {
-        console.error("Error generating speech:", error);
+        console.error(`Error generating speech for "${text}" after retries:`, error);
+        // Throw a user-friendly error message.
         throw new Error("Không thể tạo âm thanh.");
     }
 }
