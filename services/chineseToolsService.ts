@@ -14,11 +14,17 @@ const getAi = () => {
 
 
 /**
- * Generates vocabulary details using the Gemini API.
- * @param words An array of Chinese words.
- * @returns A promise that resolves to an array of vocabulary items with meanings and examples.
+ * Generates vocabulary details using the Gemini API based on a selected level.
+ * @param words An array of Chinese words (for 'all' and 'tocfl' levels).
+ * @param level The selected vocabulary level ('all', 'suggested', 'tocfl1', etc.).
+ * @param originalText The full original text (required for 'suggested' level).
+ * @returns A promise that resolves to an array of vocabulary items.
  */
-export const generateVocabularyDetails = async (words: string[]) => {
+export const generateVocabularyDetails = async (
+    words: string[], 
+    level: string, 
+    originalText?: string
+) => {
   const ai = getAi();
   const model = "gemini-2.5-flash";
 
@@ -36,8 +42,35 @@ export const generateVocabularyDetails = async (words: string[]) => {
     },
   };
   
+  let prompt = '';
   const wordList = words.join(', ');
-  const prompt = `For each Chinese word in this list [${wordList}], provide a common Vietnamese meaning, a simple Chinese example sentence using the word, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. Ensure the 'word' field in the response exactly matches the word from the input list.`;
+
+  switch (level) {
+    case 'suggested':
+        if (!originalText) throw new Error("Original text is required for 'suggested' level.");
+        prompt = `You are an expert Chinese language teacher. Analyze the following text and identify up to 10 of the most important or advanced words for an intermediate learner. The text is: "${originalText}". For each of these suggested words, provide its common Vietnamese meaning, a simple Chinese example sentence using the word, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. Ensure the words you choose are present in the text.`;
+        break;
+    
+    case 'all':
+        prompt = `For each Chinese word in this list [${wordList}], provide a common Vietnamese meaning, a simple Chinese example sentence using the word, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. Ensure the 'word' field in the response exactly matches the word from the input list.`;
+        break;
+
+    default: // TOCFL levels
+        const tocflLevel = level.replace('tocfl', '').trim();
+        const levelNumber = parseInt(tocflLevel, 10);
+        
+        if (isNaN(levelNumber) || levelNumber < 1 || levelNumber > 6) {
+             throw new Error(`Cấp độ TOCFL không hợp lệ: ${level}`);
+        }
+
+        const levelDescription = levelNumber === 6 
+            ? `TOCFL level ${levelNumber}` 
+            : `TOCFL level ${levelNumber} and higher (up to level 6)`;
+
+        prompt = `You are an expert Chinese language teacher. From the following list of Chinese words [${wordList}], filter and provide details ONLY for the words that belong to ${levelDescription}. For each matching word, provide its common Vietnamese meaning, a simple Chinese example sentence, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. If no words from the list match the specified levels, return an empty JSON array [].`;
+        break;
+  }
+
 
   try {
     const response = await ai.models.generateContent({
