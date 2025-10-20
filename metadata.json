@@ -1,0 +1,5 @@
+{
+  "name": "Học tiếng Trung qua truyện tranh",
+  "description": "Một ứng dụng web client-side giúp người dùng học tiếng Trung bằng cách tải lên ảnh truyện tranh, nhận diện chữ (OCR), phân tích câu và tạo danh sách từ vựng. Tất cả xử lý diễn ra trên trình duyệt.",
+  "requestFramePermissions": []
+}
