@@ -14,14 +14,13 @@ export interface ToastMessage {
   type: 'info' | 'error';
 }
 
-// Fix: Add RecognizedSentence interface for OCR results.
+// Fix: Add missing type definitions for OCR results and comic pages.
 export interface RecognizedSentence {
   id: string;
   text: string;
   pinyin: string;
 }
 
-// Fix: Add ComicPage interface for comic view.
 export interface ComicPage {
   id: string;
   url: string;

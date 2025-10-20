@@ -1,42 +1,28 @@
 // globals.d.ts
 
-// Fix: Moved Tesseract namespace inside `declare global` to make its types
-// available project-wide, which is necessary because this file is a module.
-// This resolves the "Cannot find namespace 'Tesseract'" errors.
-declare global {
-  namespace Tesseract {
+// Fix: Add Tesseract.js type declarations to resolve TS errors.
+declare namespace Tesseract {
     interface Worker {
-      loadLanguage(lang: string): Promise<void>;
-      initialize(lang: string): Promise<void>;
-      recognize(
-        image: ImageLike,
-        options?: any,
-        output?: { progress: (p: Progress) => void }
-      ): Promise<RecognizeResult>;
+        loadLanguage(lang: string): Promise<void>;
+        initialize(lang: string): Promise<void>;
+        recognize(
+            image: File | string,
+            options?: any,
+            output?: { progress: (p: Progress) => void }
+        ): Promise<{ data: { lines: { text: string }[] } }>;
+        terminate(): Promise<void>;
     }
 
-    function createWorker(options?: { logger: (m: any) => void }): Promise<Worker>;
-
-    type ImageLike = string | File | Blob | HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | Buffer;
-    
     interface Progress {
-      status: string;
-      progress: number;
+        status: string;
+        progress: number;
     }
 
-    interface Line {
-      text: string;
-    }
-
-    interface RecognizeResult {
-      data: {
-        text: string;
-        lines: Line[];
-      };
-    }
-  }
+    function createWorker(options?: { logger?: (m: Progress) => void }): Promise<Worker>;
+}
 
 
+declare global {
   interface Window {
     pinyinPro: {
       pinyin(text: string, options: any): string;
@@ -46,7 +32,7 @@ declare global {
     };
     // For Web Audio API compatibility
     webkitAudioContext: typeof AudioContext;
-    // Fix: Add Tesseract to window object
+    // Fix: Add Tesseract to the window object.
     Tesseract: typeof Tesseract;
   }
 }
