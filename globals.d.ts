@@ -1,38 +1,51 @@
 // globals.d.ts
 
-// Fix: Add type definitions for Tesseract.js to resolve "Cannot find namespace 'Tesseract'" errors.
-// These minimal types are based on the usage in `services/ocrService.ts`.
+// Fix: Add Tesseract.js type definitions to resolve namespace errors.
 declare namespace Tesseract {
-  interface RecognizeResult {
-    data: {
-      lines: { text: string }[];
-    };
+  interface Worker {
+    loadLanguage(lang: string): Promise<void>;
+    initialize(lang: string): Promise<void>;
+    recognize(
+      image: ImageLike,
+      options?: any,
+      output?: { progress: (p: Progress) => void }
+    ): Promise<RecognizeResult>;
   }
 
-  interface Worker {
-    loadLanguage(langs: string): Promise<void>;
-    initialize(langs: string): Promise<void>;
-    recognize(
-      image: File,
-      options: {},
-      output?: { progress: (p: { status: string; progress: number }) => void }
-    ): Promise<RecognizeResult>;
+  function createWorker(options?: { logger: (m: any) => void }): Promise<Worker>;
+
+  type ImageLike = string | File | Blob | HTMLImageElement | HTMLCanvasElement | HTMLVideoElement | Buffer;
+  
+  interface Progress {
+    status: string;
+    progress: number;
+  }
+
+  interface Line {
+    text: string;
+  }
+
+  interface RecognizeResult {
+    data: {
+      text: string;
+      lines: Line[];
+    };
   }
 }
 
+
 declare global {
   interface Window {
-    Tesseract: {
-      createWorker(options?: any): Promise<Tesseract.Worker>;
+    pinyinPro: {
+      pinyin(text: string, options: any): string;
     };
-    pinyinPro: any;
-    jieba: any;
-    responsiveVoice: {
-      speak: (text: string, voice: string, options?: object) => void;
-      getVoices: () => any[];
-      cancel: () => void;
+    jieba: {
+      cut(text: string): string[];
     };
-    responsiveVoice_onvoicesloaded?: () => void;
+    // For Web Audio API compatibility
+    webkitAudioContext: typeof AudioContext;
+    // Fix: Add Tesseract to window object
+    Tesseract: typeof Tesseract;
   }
 }
 

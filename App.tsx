@@ -1,167 +1,116 @@
-// Fix: Create the main App component to manage application state and fix module export error.
-import React, { useState, useEffect, useCallback } from 'react';
-import type { ChangeEvent, FC } from 'react';
+import React, { useState, useCallback } from 'react';
+import type { FC } from 'react';
 import Header from './components/Header';
-import ComicsView from './components/ComicsView';
 import VocabularyView from './components/VocabularyView';
-import TtsTestView from './components/TtsTestView';
-import SpeechConfig from './components/SpeechConfig';
 import { ToastContainer } from './components/Toast';
-import type { ComicPage, VocabularyItem, ToastMessage } from './types';
-import { performOcr } from './services/ocrService';
-import { segmentWords, getPinyin } from './services/chineseToolsService';
+import type { VocabularyItem, ToastMessage } from './types';
+import { segmentWords, getPinyin, generateVocabularyDetails } from './services/chineseToolsService';
+import { BeakerIcon } from './components/Icons';
 
 const App: FC = () => {
-  const [pages, setPages] = useState<ComicPage[]>([]);
+  const [inputText, setInputText] = useState('');
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'comics' | 'vocabulary' | 'tts-test'>('comics');
+  const [isLoading, setIsLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('responsiveVoiceApiKey') || '');
-  const [isSpeechReady, setIsSpeechReady] = useState(false);
 
   const addToast = useCallback((message: string, type: 'info' | 'error' = 'info') => {
     const id = Date.now();
-    // Avoid duplicate toasts
-    setToasts(prev => {
-        if (prev.some(t => t.message === message)) return prev;
-        return [...prev, { id, message, type }];
-    });
+    setToasts(prev => [...prev.filter(t => t.message !== message), { id, message, type }]);
   }, []);
 
   const removeToast = (id: number) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
-  
-  // Speech Synthesis setup
-  useEffect(() => {
-    if (!apiKey) {
-      setIsSpeechReady(false);
+
+  const handleGenerate = async () => {
+    const trimmedText = inputText.trim();
+    if (!trimmedText) {
+      addToast('Vui lòng nhập vào một đoạn văn bản tiếng Trung.', 'error');
       return;
     }
 
-    const scriptId = 'responsivevoice-script';
-    // Clean up old script if any to ensure the new key is used
-    const oldScript = document.getElementById(scriptId);
-    if (oldScript) {
-        oldScript.remove();
-    }
-    
-    // Reset status on key change
-    setIsSpeechReady(false);
-    
-    const script = document.createElement('script');
-    script.id = scriptId;
-    script.src = `https://code.responsivevoice.org/responsivevoice.js?key=${apiKey}`;
-    script.async = true;
-    
-    const onScriptLoad = () => {
-        window.responsiveVoice_onvoicesloaded = () => {
-            setIsSpeechReady(true);
-            addToast('Tính năng phát âm đã sẵn sàng.', 'info');
-        };
-        // Fallback for browsers/networks where the event might not fire reliably
-        setTimeout(() => {
-           if(window.responsiveVoice && window.responsiveVoice.getVoices().length > 0) {
-              // React handles duplicate state sets.
-              setIsSpeechReady(true);
-           } else {
-             addToast('Không thể kích hoạt giọng nói. Vui lòng kiểm tra API key.', 'error');
-           }
-        }, 2500)
-    };
-    
-    script.addEventListener('load', onScriptLoad);
-    script.addEventListener('error', () => {
-        addToast('Không thể tải script ResponsiveVoice. API key có thể không hợp lệ hoặc có lỗi mạng.', 'error');
-    });
+    setIsLoading(true);
+    setVocabulary([]); // Clear previous results
 
-    document.body.appendChild(script);
-
-    return () => {
-      script.removeEventListener('load', onScriptLoad);
-      const scriptTag = document.getElementById(scriptId);
-      if(scriptTag) scriptTag.remove();
-      // Reset callback to avoid memory leaks
-      window.responsiveVoice_onvoicesloaded = undefined;
-    };
-  }, [apiKey, addToast]);
-
-
-  const handleApiKeySave = (key: string) => {
-    const trimmedKey = key.trim();
-    setApiKey(trimmedKey);
-    localStorage.setItem('responsiveVoiceApiKey', trimmedKey);
-    addToast('Đã lưu API Key.');
-  };
-
-  const processFile = useCallback(async (file: File, pageId: string) => {
-    setPages(prev => prev.map(p => p.id === pageId ? { ...p, status: 'processing', progress: 0 } : p));
     try {
-      const sentences = await performOcr(file, (progress) => {
-        setPages(prev => prev.map(p => p.id === pageId ? { ...p, progress } : p));
-      });
-      setPages(prev => prev.map(p => p.id === pageId ? { ...p, status: 'done', sentences, progress: 1 } : p));
-      addToast(`Đã xử lý xong ảnh: ${file.name}`);
-    } catch (error) {
-      console.error(`Failed to process ${file.name}`, error);
-      setPages(prev => prev.map(p => p.id === pageId ? { ...p, status: 'error', progress: 0 } : p));
-      addToast(`Lỗi khi xử lý ảnh: ${file.name}`, 'error');
-    }
-  }, [addToast]);
+      // 1. Segment text into words
+      const words = segmentWords(trimmedText);
+      const uniqueWords = [...new Set(words)]
+        .filter(word => word.trim().length > 0 && /[\u4e00-\u9fa5]/.test(word));
 
-  const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      const files = Array.from(event.target.files);
-      const newPages: ComicPage[] = files.map(file => ({
-        id: `${file.name}-${Date.now()}`,
-        file,
-        url: URL.createObjectURL(file),
-        status: 'pending',
-        progress: 0,
-        sentences: [],
-      }));
+      if (uniqueWords.length === 0) {
+        addToast('Không tìm thấy từ tiếng Trung nào trong văn bản.', 'info');
+        setIsLoading(false);
+        return;
+      }
 
-      setPages(prev => [...prev, ...newPages]);
-      // Process files in parallel
-      newPages.forEach(page => processFile(page.file, page.id));
+      // 2. Generate details from Gemini
+      const detailsFromAI = await generateVocabularyDetails(uniqueWords);
+
+      // 3. Combine and add Pinyin
+      const vocabItems: VocabularyItem[] = detailsFromAI.map((item: any) => ({
+        ...item,
+        pinyin: getPinyin(item.word),
+        examplePinyin: getPinyin(item.exampleSentence),
+      })).sort((a,b) => a.word.localeCompare(b.word, 'zh-Hans-CN'));
+      
+      setVocabulary(vocabItems);
+      addToast(`Đã tạo thành công ${vocabItems.length} mục từ vựng.`, 'info');
+
+    } catch (error: any) {
+      console.error(error);
+      addToast(error.message || 'Đã xảy ra lỗi không xác định.', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  // Vocabulary generation
-  useEffect(() => {
-    const allText = pages
-        .filter(p => p.status === 'done')
-        .flatMap(p => p.sentences.map(s => s.text))
-        .join('');
-
-    if (allText) {
-      const words = segmentWords(allText);
-      const uniqueWords = [...new Set(words)];
-      
-      const vocabItems: VocabularyItem[] = uniqueWords
-        .filter(word => word.trim().length > 0)
-        .sort((a,b) => a.localeCompare(b, 'zh-Hans-CN'))
-        .map(word => ({
-          word,
-          pinyin: getPinyin(word),
-        }));
-        
-      setVocabulary(vocabItems);
-    }
-  }, [pages]);
 
   return (
     <div className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen font-sans">
-      <Header
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        hasVocabulary={vocabulary.length > 0}
-      />
+      <Header />
       <main className="container mx-auto p-4 md:p-8">
-        <SpeechConfig apiKey={apiKey} onApiKeySave={handleApiKeySave} isSpeechReady={isSpeechReady} />
-        {activeTab === 'comics' && <ComicsView pages={pages} onFileUpload={handleFileUpload} isSpeechReady={isSpeechReady} />}
-        {activeTab === 'vocabulary' && <VocabularyView vocabulary={vocabulary} isSpeechReady={isSpeechReady} />}
-        {activeTab === 'tts-test' && <TtsTestView isSpeechReady={isSpeechReady} />}
+        <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 rounded-lg shadow-md p-6">
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Nhập đoạn văn tiếng Trung</h2>
+          <p className="text-slate-600 dark:text-slate-400 mt-2 mb-4">
+            Dán một đoạn văn vào đây, ứng dụng sẽ tự động tách từ, tạo danh sách từ vựng kèm theo nghĩa, ví dụ và phát âm.
+          </p>
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            rows={8}
+            className="block w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-base shadow-sm placeholder-slate-400
+              focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+              transition"
+            placeholder="Ví dụ: 我今天很高兴，因为我学到了很多新东西。"
+            disabled={isLoading}
+          />
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={handleGenerate}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-all
+                disabled:bg-slate-400 disabled:cursor-wait"
+            >
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Đang xử lý...
+                </>
+              ) : (
+                <>
+                  <BeakerIcon className="w-5 h-5" />
+                  Tạo từ vựng
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        
+        <VocabularyView vocabulary={vocabulary} />
+
       </main>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
