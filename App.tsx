@@ -1,207 +1,171 @@
+// Fix: Create the main App component to manage application state and fix module export error.
 import React, { useState, useEffect, useCallback } from 'react';
-import type { ChangeEvent } from 'react';
-
+import type { ChangeEvent, FC } from 'react';
 import Header from './components/Header';
 import ComicsView from './components/ComicsView';
 import VocabularyView from './components/VocabularyView';
 import TtsTestView from './components/TtsTestView';
 import SpeechConfig from './components/SpeechConfig';
 import { ToastContainer } from './components/Toast';
+import type { ComicPage, VocabularyItem, ToastMessage } from './types';
+import { performOcr } from './services/ocrService';
+import { segmentWords, getPinyin } from './services/chineseToolsService';
 
-import type { ComicPage, VocabularyItem, RecognizedSentence, ToastMessage } from './types';
-import { recognizeText, initializeOcrWorker } from './services/ocrService';
-import { getPinyin, segmentWords } from './services/chineseToolsService';
-
-const API_KEY_STORAGE_KEY = 'responsiveVoiceApiKey';
-
-function App() {
-  const [activeTab, setActiveTab] = useState<'comics' | 'vocabulary' | 'tts-test'>('comics');
-  const [comicPages, setComicPages] = useState<ComicPage[]>([]);
+const App: FC = () => {
+  const [pages, setPages] = useState<ComicPage[]>([]);
   const [vocabulary, setVocabulary] = useState<VocabularyItem[]>([]);
+  const [activeTab, setActiveTab] = useState<'comics' | 'vocabulary' | 'tts-test'>('comics');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  
-  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(API_KEY_STORAGE_KEY) || '');
-  const [isSpeechReady, setIsSpeechReady] = useState<boolean>(false);
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('responsiveVoiceApiKey') || '');
+  const [isSpeechReady, setIsSpeechReady] = useState(false);
 
-  // Pre-initialize the OCR worker on app load
-  useEffect(() => {
-    initializeOcrWorker();
-  }, []);
-
-  const addToast = useCallback((message: string, type: 'info' | 'error') => {
+  const addToast = useCallback((message: string, type: 'info' | 'error' = 'info') => {
     const id = Date.now();
-    setToasts(prevToasts => {
-      if (prevToasts.some(toast => toast.message === message)) return prevToasts;
-      return [...prevToasts, { id, message, type }];
+    // Avoid duplicate toasts
+    setToasts(prev => {
+        if (prev.some(t => t.message === message)) return prev;
+        return [...prev, { id, message, type }];
     });
   }, []);
+
+  const removeToast = (id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
   
-  const removeToast = useCallback((id: number) => {
-    setToasts(prevToasts => prevToasts.filter(toast => toast.id !== id));
-  }, []);
-
-  // Effect to dynamically load ResponsiveVoice script using a robust polling mechanism
+  // Speech Synthesis setup
   useEffect(() => {
-    const existingScript = document.getElementById('responsivevoice-script');
-    if (existingScript) {
-      existingScript.remove();
-    }
-    setIsSpeechReady(false);
-
     if (!apiKey) {
+      setIsSpeechReady(false);
       return;
     }
 
+    const scriptId = 'responsivevoice-script';
+    // Clean up old script if any to ensure the new key is used
+    const oldScript = document.getElementById(scriptId);
+    if (oldScript) {
+        oldScript.remove();
+    }
+    
+    // Reset status on key change
+    setIsSpeechReady(false);
+    
     const script = document.createElement('script');
-    script.id = 'responsivevoice-script';
+    script.id = scriptId;
     script.src = `https://code.responsivevoice.org/responsivevoice.js?key=${apiKey}`;
     script.async = true;
-
-    let pollInterval: number | null = null;
-    let timeoutId: number | null = null;
-
-    script.onload = () => {
-      const startTime = Date.now();
-      const pollTimeLimit = 5000; // Wait for a maximum of 5 seconds
-
-      pollInterval = window.setInterval(() => {
-        // Check if the library is ready by seeing if it has loaded any voices
-        if (window.responsiveVoice && window.responsiveVoice.getVoices().length > 0) {
-          if (pollInterval) clearInterval(pollInterval);
-          if (timeoutId) clearTimeout(timeoutId);
-          setIsSpeechReady(true);
-          addToast('Tính năng phát âm đã sẵn sàng!', 'info');
-        } else if (Date.now() - startTime > pollTimeLimit) {
-          // If 5 seconds have passed and it's still not ready, give up.
-          if (pollInterval) clearInterval(pollInterval);
-          setIsSpeechReady(false);
-          addToast('Không thể khởi tạo giọng đọc. API key có thể không hợp lệ hoặc đã hết hạn.', 'error');
-        }
-      }, 100); // Check every 100ms
+    
+    const onScriptLoad = () => {
+        window.responsiveVoice_onvoicesloaded = () => {
+            setIsSpeechReady(true);
+            addToast('Tính năng phát âm đã sẵn sàng.', 'info');
+        };
+        // Fallback for browsers/networks where the event might not fire reliably
+        setTimeout(() => {
+           if(window.responsiveVoice && window.responsiveVoice.getVoices().length > 0) {
+              // React handles duplicate state sets.
+              setIsSpeechReady(true);
+           } else {
+             addToast('Không thể kích hoạt giọng nói. Vui lòng kiểm tra API key.', 'error');
+           }
+        }, 2500)
     };
-
-    script.onerror = () => {
-      setIsSpeechReady(false);
-      addToast('Lỗi tải script phát âm. Vui lòng kiểm tra kết nối mạng và API key.', 'error');
-    };
+    
+    script.addEventListener('load', onScriptLoad);
+    script.addEventListener('error', () => {
+        addToast('Không thể tải script ResponsiveVoice. API key có thể không hợp lệ hoặc có lỗi mạng.', 'error');
+    });
 
     document.body.appendChild(script);
 
-    // Cleanup function
     return () => {
-      const scriptOnCleanup = document.getElementById('responsivevoice-script');
-      if (scriptOnCleanup) {
-        scriptOnCleanup.remove();
-      }
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
+      script.removeEventListener('load', onScriptLoad);
+      const scriptTag = document.getElementById(scriptId);
+      if(scriptTag) scriptTag.remove();
+      // Reset callback to avoid memory leaks
+      window.responsiveVoice_onvoicesloaded = undefined;
     };
   }, [apiKey, addToast]);
-  
-  const handleApiKeySave = (newKey: string) => {
-    localStorage.setItem(API_KEY_STORAGE_KEY, newKey);
-    setApiKey(newKey);
+
+
+  const handleApiKeySave = (key: string) => {
+    const trimmedKey = key.trim();
+    setApiKey(trimmedKey);
+    localStorage.setItem('responsiveVoiceApiKey', trimmedKey);
+    addToast('Đã lưu API Key.');
   };
 
-
-  const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files) return;
-
-    const newPages: ComicPage[] = Array.from(files).map(file => ({
-      id: `${file.name}-${Date.now()}`,
-      file,
-      url: URL.createObjectURL(file),
-      status: 'pending',
-      progress: 0,
-      sentences: [],
-    }));
-
-    setComicPages(prevPages => [...prevPages, ...newPages]);
-    setActiveTab('comics');
-    event.target.value = '';
-  };
-
-  const processPage = useCallback(async (page: ComicPage) => {
-    setComicPages(currentPages => currentPages.map(p => p.id === page.id ? { ...p, status: 'processing', progress: 0 } : p));
-    
+  const processFile = useCallback(async (file: File, pageId: string) => {
+    setPages(prev => prev.map(p => p.id === pageId ? { ...p, status: 'processing', progress: 0 } : p));
     try {
-      const result = await recognizeText(page, (progress) => {
-        setComicPages(currentPages => currentPages.map(p => p.id === page.id ? { ...p, progress } : p));
+      const sentences = await performOcr(file, (progress) => {
+        setPages(prev => prev.map(p => p.id === pageId ? { ...p, progress } : p));
       });
-      
-      const sentences: RecognizedSentence[] = result.data.lines
-          .map(line => line.text.replace(/\s+/g, ''))
-          .filter(text => text.length > 0)
-          .map((text, index) => ({
-              id: `${page.id}-sentence-${index}`,
-              text,
-              pinyin: getPinyin(text)
-          }));
-      
-      setComicPages(currentPages => currentPages.map(p => p.id === page.id ? { ...p, status: 'done', sentences, progress: 1 } : p));
-
-      if (sentences.length === 0) {
-        addToast('Không tìm thấy chữ nào trên ảnh này.', 'info');
-      }
-
+      setPages(prev => prev.map(p => p.id === pageId ? { ...p, status: 'done', sentences, progress: 1 } : p));
+      addToast(`Đã xử lý xong ảnh: ${file.name}`);
     } catch (error) {
-      console.error('OCR Error:', error);
-      setComicPages(currentPages => currentPages.map(p => p.id === page.id ? { ...p, status: 'error' } : p));
-      addToast('Đã xảy ra lỗi khi nhận diện chữ.', 'error');
+      console.error(`Failed to process ${file.name}`, error);
+      setPages(prev => prev.map(p => p.id === pageId ? { ...p, status: 'error', progress: 0 } : p));
+      addToast(`Lỗi khi xử lý ảnh: ${file.name}`, 'error');
     }
   }, [addToast]);
 
-  useEffect(() => {
-    const pendingPage = comicPages.find(p => p.status === 'pending');
-    if (pendingPage) {
-      processPage(pendingPage);
-    }
-  }, [comicPages, processPage]);
-
-  useEffect(() => {
-    const allText = comicPages.flatMap(page => page.sentences.map(s => s.text)).join('');
-    
-    if (allText.length > 0) {
-      const words = segmentWords(allText);
-      const uniqueWords = [...new Set(words)].filter(w => w.trim().length > 0);
-      
-      const newVocabulary: VocabularyItem[] = uniqueWords.map(word => ({
-        word,
-        pinyin: getPinyin(word)
+  const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) {
+      const files = Array.from(event.target.files);
+      const newPages: ComicPage[] = files.map(file => ({
+        id: `${file.name}-${Date.now()}`,
+        file,
+        url: URL.createObjectURL(file),
+        status: 'pending',
+        progress: 0,
+        sentences: [],
       }));
-      
-      setVocabulary(newVocabulary);
+
+      setPages(prev => [...prev, ...newPages]);
+      // Process files in parallel
+      newPages.forEach(page => processFile(page.file, page.id));
     }
-  }, [comicPages]);
-  
+  };
+
+  // Vocabulary generation
+  useEffect(() => {
+    const allText = pages
+        .filter(p => p.status === 'done')
+        .flatMap(p => p.sentences.map(s => s.text))
+        .join('');
+
+    if (allText) {
+      const words = segmentWords(allText);
+      const uniqueWords = [...new Set(words)];
+      
+      const vocabItems: VocabularyItem[] = uniqueWords
+        .filter(word => word.trim().length > 0)
+        .sort((a,b) => a.localeCompare(b, 'zh-Hans-CN'))
+        .map(word => ({
+          word,
+          pinyin: getPinyin(word),
+        }));
+        
+      setVocabulary(vocabItems);
+    }
+  }, [pages]);
+
   return (
-    <div className="min-h-screen">
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
-      <Header 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
-        hasVocabulary={vocabulary.length > 0} 
+    <div className="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 min-h-screen font-sans">
+      <Header
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        hasVocabulary={vocabulary.length > 0}
       />
       <main className="container mx-auto p-4 md:p-8">
         <SpeechConfig apiKey={apiKey} onApiKeySave={handleApiKeySave} isSpeechReady={isSpeechReady} />
-        
-        {activeTab === 'comics' && (
-          <ComicsView pages={comicPages} onFileUpload={handleFileUpload} isSpeechReady={isSpeechReady} />
-        )}
-        {activeTab === 'vocabulary' && (
-          <VocabularyView vocabulary={vocabulary} isSpeechReady={isSpeechReady} />
-        )}
-        {activeTab === 'tts-test' && (
-          <TtsTestView isSpeechReady={isSpeechReady} />
-        )}
+        {activeTab === 'comics' && <ComicsView pages={pages} onFileUpload={handleFileUpload} isSpeechReady={isSpeechReady} />}
+        {activeTab === 'vocabulary' && <VocabularyView vocabulary={vocabulary} isSpeechReady={isSpeechReady} />}
+        {activeTab === 'tts-test' && <TtsTestView isSpeechReady={isSpeechReady} />}
       </main>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
-}
+};
 
 export default App;
