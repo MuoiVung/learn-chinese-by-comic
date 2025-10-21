@@ -1,20 +1,46 @@
 import React from 'react';
 import type { FC } from 'react';
-import { BookOpenIcon } from './Icons';
 
-const Header: FC = () => {
-  return (
-    <header className="bg-white dark:bg-slate-800 shadow-md p-4 sticky top-0 z-10">
-      <div className="container mx-auto flex justify-center items-center">
-        <div className="flex items-center gap-3">
-            <BookOpenIcon className="w-8 h-8 text-blue-600 dark:text-blue-400"/>
-            <h1 className="text-xl md:text-2xl font-bold text-blue-600 dark:text-blue-400">
-                Tạo Từ Vựng Tiếng Trung
-            </h1>
-        </div>
-      </div>
-    </header>
-  );
+// FIX: Provide the Header component for app navigation and title.
+
+interface HeaderProps {
+    currentView: string;
+    setCurrentView: (view: string) => void;
+}
+
+const Header: FC<HeaderProps> = ({ currentView, setCurrentView }) => {
+    const navItems = ['Tạo Từ Vựng', 'Luyện Tập', 'Tạo Truyện'];
+    
+    return (
+        <header className="bg-white dark:bg-slate-900 shadow-md">
+            <div className="container mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center">
+                <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    Hán Ngữ AI
+                </h1>
+                <nav className="mt-4 sm:mt-0">
+                    <ul className="flex space-x-2 md:space-x-4">
+                        {navItems.map(item => {
+                             const isActive = currentView === item;
+                             return (
+                                <li key={item}>
+                                    <button 
+                                        onClick={() => setCurrentView(item)}
+                                        className={`px-4 py-2 text-sm md:text-base font-semibold rounded-md transition-colors duration-300 ${
+                                            isActive 
+                                                ? 'bg-blue-600 text-white' 
+                                                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        {item}
+                                    </button>
+                                </li>
+                             );
+                        })}
+                    </ul>
+                </nav>
+            </div>
+        </header>
+    );
 };
 
 export default Header;

@@ -1,265 +1,280 @@
+
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
+import type { VocabularyItem, PracticeQuestion, StoryResult } from '../types';
 
-// --- Gemini API Service ---
-let ai: GoogleGenAI | null = null;
-const getAi = () => {
-    if (!ai) {
-        if (!process.env.API_KEY) {
-            throw new Error("API_KEY environment variable not set");
-        }
-        ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const model = 'gemini-2.5-flash';
+
+// Helper function to decode base64 to Uint8Array
+const decode = (base64: string): Uint8Array => {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
     }
-    return ai;
+    return bytes;
 };
 
+// Helper function to decode raw PCM data into an AudioBuffer
+const decodeRawAudioData = async (ctx: AudioContext, data: Uint8Array): Promise<AudioBuffer> => {
+    const dataInt16 = new Int16Array(data.buffer);
+    const frameCount = dataInt16.length; // single channel
+    const buffer = ctx.createBuffer(1, frameCount, 24000); // 1 channel, 24k sample rate
 
-/**
- * Generates vocabulary details using the Gemini API based on a selected level.
- * @param words An array of Chinese words (for 'all' and 'tocfl' levels).
- * @param level The selected vocabulary level ('all', 'suggested', 'tocfl1', etc.).
- * @param originalText The full original text (required for 'suggested' level).
- * @returns A promise that resolves to an array of vocabulary items.
- */
-export const generateVocabularyDetails = async (
-    words: string[], 
-    level: string, 
-    originalText?: string
-) => {
-  const ai = getAi();
-  const model = "gemini-2.5-flash";
+    const channelData = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i++) {
+        channelData[i] = dataInt16[i] / 32768.0;
+    }
+    return buffer;
+};
 
-  const schema = {
-    type: Type.ARRAY,
-    items: {
-      type: Type.OBJECT,
-      properties: {
-        word: { type: Type.STRING },
-        vietnameseMeaning: { type: Type.STRING },
-        exampleSentence: { type: Type.STRING },
-        exampleTranslation: { type: Type.STRING },
-      },
-      required: ['word', 'vietnameseMeaning', 'exampleSentence', 'exampleTranslation'],
-    },
-  };
-  
-  let prompt = '';
-  const wordList = words.join(', ');
-
-  switch (level) {
-    case 'suggested':
-        if (!originalText) throw new Error("Original text is required for 'suggested' level.");
-        prompt = `You are an expert Chinese language teacher. Analyze the following text and identify up to 10 of the most important or advanced words for an intermediate learner. The text is: "${originalText}". For each of these suggested words, provide its common Vietnamese meaning, a simple Chinese example sentence using the word, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. Ensure the words you choose are present in the text.`;
-        break;
-    
-    case 'all':
-        prompt = `For each Chinese word in this list [${wordList}], provide a common Vietnamese meaning, a simple Chinese example sentence using the word, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. Ensure the 'word' field in the response exactly matches the word from the input list.`;
-        break;
-
-    default: // TOCFL levels
-        const tocflLevel = level.replace('tocfl', '').trim();
-        const levelNumber = parseInt(tocflLevel, 10);
-        
-        if (isNaN(levelNumber) || levelNumber < 1 || levelNumber > 6) {
-             throw new Error(`Cấp độ TOCFL không hợp lệ: ${level}`);
-        }
-
-        const levelDescription = levelNumber === 6 
-            ? `TOCFL level ${levelNumber}` 
-            : `TOCFL level ${levelNumber} and higher (up to level 6)`;
-
-        prompt = `You are an expert Chinese language teacher. From the following list of Chinese words [${wordList}], filter and provide details ONLY for the words that belong to ${levelDescription}. For each matching word, provide its common Vietnamese meaning, a simple Chinese example sentence, and a Vietnamese translation of the example. Return a JSON array of objects matching the provided schema. If no words from the list match the specified levels, return an empty JSON array [].`;
-        break;
-  }
-
-
-  try {
+export const fetchAudioData = async (text: string, audioContext: AudioContext): Promise<AudioBuffer> => {
+    const ttsModel = 'gemini-2.5-flash-preview-tts';
+    // FIX: Add a simple Chinese prefix to provide context for the TTS model, especially for single words.
+    const prompt = `朗读：${text}`;
     const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-      },
-    });
-
-    // The response text is a JSON string, parse it.
-    return JSON.parse(response.text);
-  } catch (error) {
-    console.error("Error generating vocabulary details:", error);
-    throw new Error("Không thể tạo chi tiết từ vựng. Vui lòng thử lại.");
-  }
-};
-
-/**
- * A simple async retry helper function with exponential backoff.
- * @param fn The async function to execute.
- * @param retries Number of retries.
- * @param delay Initial delay in ms.
- * @returns A promise that resolves with the result of the function.
- */
-const withRetry = async <T>(fn: () => Promise<T>, retries = 1, delay = 300): Promise<T> => {
-    try {
-        return await fn();
-    } catch (error) {
-        if (retries > 0) {
-            console.warn(`Operation failed, retrying in ${delay}ms... (${retries} retries left)`);
-            await new Promise(res => setTimeout(res, delay));
-            return withRetry(fn, retries - 1, delay * 2); // Exponential backoff
-        }
-        console.error("Operation failed after all retries.", error);
-        throw error;
-    }
-};
-
-
-/**
- * Generates speech from text using the Gemini TTS API, with a retry mechanism.
- * @param text The text to convert to speech.
- * @returns A promise that resolves to a base64 encoded audio string.
- */
-export const generateSpeech = async (text: string): Promise<string> => {
-    const speechGenerationTask = async () => {
-        const ai = getAi();
-        // Fix: Add a clear instruction to the prompt to improve TTS reliability, especially for single words.
-        const instructionalPrompt = `Speak this clearly: ${text}`;
-
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: instructionalPrompt }] }],
-            config: {
-                responseModalities: [Modality.AUDIO],
-                speechConfig: {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: 'Kore' },
-                    },
+        model: ttsModel,
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: 'Kore' },
                 },
             },
-        });
-        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!base64Audio) {
-            // Add more detailed logging for easier debugging in the future.
-            console.error("TTS API returned no audio data. Full response:", JSON.stringify(response, null, 2));
-            throw new Error(`API returned no audio data for text: "${text}"`);
-        }
-        return base64Audio;
-    };
+        },
+    });
 
-    try {
-        // Wrap the task with a retry mechanism. 1 retry means 2 total attempts.
-        return await withRetry(speechGenerationTask, 1, 300);
-    } catch (error) {
-        console.error(`Error generating speech for "${text}" after retries:`, error);
-        // Throw a user-friendly error message.
-        throw new Error("Không thể tạo âm thanh.");
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+        throw new Error("No audio data received from API.");
     }
-}
-
-
-// --- Local Chinese Tools ---
-
-/**
- * Converts a Chinese string to pinyin using the global pinyinPro library.
- * @param text The Chinese text.
- * @returns The pinyin representation of the text.
- */
-export const getPinyin = (text: string): string => {
-  if (window.pinyinPro) {
-    return window.pinyinPro.pinyin(text, { toneType: 'num', v: true });
-  }
-  console.warn('pinyinPro library is not available.');
-  return '';
+    const audioBytes = decode(base64Audio);
+    return decodeRawAudioData(audioContext, audioBytes);
 };
 
-/**
- * Segments a Chinese string into words using the global jieba library.
- * @param text The Chinese text.
- * @returns An array of words.
- */
-export const segmentWords = (text: string): string[] => {
-  if (window.jieba) {
-    // Using cut method for more accurate word segmentation
-    return window.jieba.cut(text);
-  }
-  console.warn('jieba library is not available.');
-  return [text];
-};
-
-
-// --- Audio Utilities ---
-
-// Fix: Create and export a shared AudioContext getter.
-// A single AudioContext is reused for performance.
+// FIX: Add a shared AudioContext and the missing speakText function.
 let audioContext: AudioContext | null = null;
 export const getAudioContext = () => {
-  if (!audioContext || audioContext.state === 'closed') {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-  }
-  return audioContext;
+    if (!audioContext || audioContext.state === 'closed') {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    }
+    return audioContext;
+};
+
+// Helper to play a pre-fetched AudioBuffer.
+// Returns the source node so it can be stopped if needed.
+export const playAudioBuffer = (buffer: AudioBuffer, context: AudioContext): AudioBufferSourceNode => {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start(0);
+    return source;
+};
+
+export const speakText = async (text: string): Promise<void> => {
+    const audioCtx = getAudioContext();
+    const buffer = await fetchAudioData(text, audioCtx);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    
+    return new Promise(resolve => {
+        source.onended = () => {
+            resolve();
+        };
+        source.start(0);
+    });
 };
 
 
-/**
- * Decodes a base64 string into a Uint8Array.
- * @param base64 The base64 encoded string.
- * @returns A Uint8Array of the decoded data.
- */
-export function decode(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-/**
- * Decodes raw PCM audio data into an AudioBuffer for playback.
- * @param data The raw audio data as a Uint8Array.
- * @param ctx The AudioContext to use for decoding.
- * @param sampleRate The sample rate of the audio (e.g., 24000 for Gemini TTS).
- * @param numChannels The number of audio channels (e.g., 1 for mono).
- * @returns A promise that resolves to an AudioBuffer.
- */
-export async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+export const generateVocabulary = async (text: string, level: string): Promise<VocabularyItem[]> => {
+    let levelInstruction = "Extract all key vocabulary words and phrases.";
+    if (level.startsWith('tocfl')) {
+        const levelNum = level.replace('tocfl', '');
+        levelInstruction = `Extract all key vocabulary words and phrases that are at or above TOCFL level ${levelNum} (e.g., if level 4 is chosen, include levels 4, 5, and 6).`;
+    } else if (level === 'suggested') {
+        levelInstruction = "Analyze the text and suggest up to 10 of the most important or difficult words for an intermediate learner."
     }
-  }
-  return buffer;
-}
 
-// Fix: Implement and export speakText function for TTS playback.
-/**
- * Generates speech from text and plays it immediately.
- * @param text The text to speak.
- */
-export const speakText = async (text: string): Promise<void> => {
-    if (!text.trim()) return;
+    const prompt = `
+      From the following Vietnamese text, ${levelInstruction}
+      For each one, provide the Chinese translation, pinyin with tone marks (e.g., wǒ), and a simple example sentence in Chinese with its Vietnamese translation.
+      The text is: "${text}"
+    `;
+
+    const response = await ai.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    vocabulary: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                word: { type: Type.STRING, description: "The Chinese word or phrase." },
+                                pinyin: { type: Type.STRING, description: "The Pinyin transcription with tone marks." },
+                                vietnameseMeaning: { type: Type.STRING, description: "The Vietnamese meaning of the word." },
+                                exampleSentence: { type: Type.STRING, description: "An example sentence in Chinese using the word." },
+                                exampleTranslation: { type: Type.STRING, description: "The Vietnamese translation of the example sentence." },
+                            },
+                            required: ['word', 'pinyin', 'vietnameseMeaning', 'exampleSentence', 'exampleTranslation'],
+                        }
+                    }
+                },
+                required: ['vocabulary']
+            },
+        },
+    });
+
+    const jsonText = response.text.trim();
     try {
-        const base64Audio = await generateSpeech(text);
-        const ctx = getAudioContext();
-        const decodedData = decode(base64Audio);
-        const buffer = await decodeAudioData(decodedData, ctx, 24000, 1);
+        const result = JSON.parse(jsonText);
+        return result.vocabulary || [];
+    } catch (e) {
+        console.error("Failed to parse vocabulary response:", jsonText, e);
+        throw new Error("Không thể tạo từ vựng. Phản hồi từ AI không hợp lệ.");
+    }
+};
+
+export const generatePracticeExercises = async (vocabList: VocabularyItem[]): Promise<{ title: string; questions: PracticeQuestion[] }> => {
+  const words = vocabList.map(v => `${v.word} (${v.pinyin}): ${v.vietnameseMeaning}`).join(', ');
+
+  const prompt = `
+    Based on the following list of Chinese vocabulary words, create a practice exercise with ${Math.min(vocabList.length, 10)} questions.
+    The list is: ${words}.
+    The exercise should include a mix of the following question types:
+    1. 'multiple-choice': Given a Chinese word, choose the correct Vietnamese meaning from 4 options. The 'word' field should contain the Chinese word to be quizzed.
+    2. 'fill-in-the-blank': Given an example sentence in Chinese with the vocabulary word blanked out (using "___"), choose the correct word to fill in the blank from 4 options. The options should be Chinese words from the list. The questionText should be the full sentence with "___". The 'word' field should be the correct Chinese word.
+    3. 'listening': The user will hear a word and must type it. The questionText should be "Nghe và gõ lại từ bạn nghe được.". The 'word' field should be the Chinese word to speak and check against.
+
+    Make sure the questions are varied and cover different words from the list.
+    For multiple-choice and fill-in-the-blank questions, provide 4 options and indicate the correct answer index.
+    For listening questions, the options array can be empty and correctAnswerIndex should be 0.
+  `;
+
+    const response = await ai.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING, description: "A title for the practice session, e.g., 'Bài tập luyện từ vựng'." },
+                    questions: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                type: { type: Type.STRING, enum: ['multiple-choice', 'fill-in-the-blank', 'listening'] },
+                                word: { type: Type.STRING, description: "The target Chinese word for the question." },
+                                questionText: { type: Type.STRING, description: "The text of the question to display to the user." },
+                                options: { type: Type.ARRAY, items: { type: Type.STRING }, description: "An array of 4 options for multiple-choice or fill-in-the-blank. Empty for listening." },
+                                correctAnswerIndex: { type: Type.INTEGER, description: "The 0-based index of the correct answer in the options array. 0 for listening." },
+                            },
+                            required: ['type', 'word', 'questionText', 'options', 'correctAnswerIndex'],
+                        },
+                    },
+                },
+                required: ['title', 'questions'],
+            },
+        },
+    });
+
+    const jsonText = response.text.trim();
+    try {
+        const result = JSON.parse(jsonText);
+        if (result && result.questions) {
+            return result;
+        } else {
+            throw new Error("Invalid response structure from AI.");
+        }
+    } catch (e) {
+        console.error("Failed to parse AI response:", jsonText, e);
+        throw new Error("Không thể tạo bài tập. Phản hồi từ AI không hợp lệ.");
+    }
+};
+
+export const generateStory = async (topic: string, vocabLevel: string): Promise<StoryResult> => {
+    let levelInstruction = "The story should contain a variety of vocabulary.";
+    if (vocabLevel.startsWith('tocfl')) {
+        const levelNum = vocabLevel.replace('tocfl', '');
+        levelInstruction = `The story should primarily use vocabulary at or above TOCFL level ${levelNum}. Then, from the generated story, extract all vocabulary at or above TOCFL level ${levelNum}.`;
+    }
+
+    const prompt = `
+        You are an AI assistant for language learners. Your task is to generate a short, engaging story in Chinese and then extract relevant vocabulary from it.
+
+        **Story Generation Task:**
+        - Write a short story in Chinese.
+        - Topic: "${topic}"
+        - The story should be broken down into natural segments (paragraphs).
+        - For each segment, provide the Chinese text, the Pinyin transcription with tone marks, and a Vietnamese translation.
         
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start();
-    } catch (error) {
-        console.error(`Failed to speak text: "${text}"`, error);
-        // Rethrow or handle as needed, for example, by showing a toast.
-        throw new Error("Không thể phát âm thanh.");
+        **Vocabulary Extraction Task:**
+        - ${levelInstruction}
+        - For each extracted vocabulary word, provide its Pinyin, Vietnamese meaning, an example sentence (which must be the sentence from the story where the word appeared), and the Vietnamese translation of that example sentence.
+
+        Return the entire output as a single JSON object.
+    `;
+
+    const response = await ai.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING, description: "The Chinese title of the story." },
+                    segments: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                chinese: { type: Type.STRING, description: "A segment of the story in Chinese characters." },
+                                pinyin: { type: Type.STRING, description: "The Pinyin transcription for the segment." },
+                                vietnamese: { type: Type.STRING, description: "The Vietnamese translation of the segment." },
+                            },
+                            required: ['chinese', 'pinyin', 'vietnamese'],
+                        }
+                    },
+                    vocabulary: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                word: { type: Type.STRING, description: "The Chinese word or phrase." },
+                                pinyin: { type: Type.STRING, description: "The Pinyin transcription with tone marks." },
+                                vietnameseMeaning: { type: Type.STRING, description: "The Vietnamese meaning of the word." },
+                                exampleSentence: { type: Type.STRING, description: "The sentence from the story where the word appeared." },
+                                exampleTranslation: { type: Type.STRING, description: "The Vietnamese translation of the example sentence." },
+                            },
+                            required: ['word', 'pinyin', 'vietnameseMeaning', 'exampleSentence', 'exampleTranslation'],
+                        }
+                    }
+                },
+                required: ['title', 'segments', 'vocabulary']
+            },
+        },
+    });
+
+    const jsonText = response.text.trim();
+    try {
+        const result = JSON.parse(jsonText);
+        if (result && result.title && result.segments && result.vocabulary) {
+            return result;
+        }
+        throw new Error("Invalid story structure from AI.");
+    } catch (e) {
+        console.error("Failed to parse story response:", jsonText, e);
+        throw new Error("Không thể tạo truyện. Phản hồi từ AI không hợp lệ.");
     }
 };

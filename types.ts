@@ -1,11 +1,22 @@
-
 export interface VocabularyItem {
   word: string;
   pinyin: string;
   vietnameseMeaning: string;
   exampleSentence: string;
-  examplePinyin: string;
   exampleTranslation: string;
+}
+
+export interface PracticeQuestion {
+  type: 'multiple-choice' | 'fill-in-the-blank' | 'listening';
+  word: string;
+  questionText: string;
+  options: string[];
+  correctAnswerIndex: number;
+}
+
+export interface Exercise {
+  title: string;
+  questions: PracticeQuestion[];
 }
 
 export interface ToastMessage {
@@ -14,17 +25,14 @@ export interface ToastMessage {
   type: 'info' | 'error';
 }
 
-// Fix: Add missing type definitions for OCR results and comic pages.
-export interface RecognizedSentence {
-  id: string;
-  text: string;
+export interface StorySegment {
+  chinese: string;
   pinyin: string;
+  vietnamese: string;
 }
 
-export interface ComicPage {
-  id: string;
-  url: string;
-  status: 'pending' | 'processing' | 'done' | 'error';
-  progress: number;
-  sentences: RecognizedSentence[];
+export interface StoryResult {
+  title: string;
+  segments: StorySegment[];
+  vocabulary: VocabularyItem[];
 }
