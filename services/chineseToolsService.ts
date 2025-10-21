@@ -32,8 +32,9 @@ const decodeRawAudioData = async (ctx: AudioContext, data: Uint8Array): Promise<
 
 export const fetchAudioData = async (text: string, audioContext: AudioContext): Promise<AudioBuffer> => {
     const ttsModel = 'gemini-2.5-flash-preview-tts';
-    // FIX: Add a simple Chinese prefix to provide context for the TTS model, especially for single words.
-    const prompt = `朗读：${text}`;
+    // FIX: Use a more robust, complete sentence prompt in Chinese to ensure the TTS model
+    // always understands the context, even for single, potentially ambiguous words.
+    const prompt = `请朗读以下词语：'${text}'`;
     const response = await ai.models.generateContent({
         model: ttsModel,
         contents: [{ parts: [{ text: prompt }] }],
