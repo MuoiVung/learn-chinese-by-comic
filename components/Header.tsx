@@ -9,7 +9,7 @@ interface HeaderProps {
 }
 
 const Header: FC<HeaderProps> = ({ currentView, setCurrentView }) => {
-    const navItems = ['Tạo Từ Vựng', 'Luyện Tập', 'Tạo Truyện'];
+    const navItems = ['Tạo Từ Vựng', 'Luyện Tập', 'Tạo Truyện', 'Luyện Đọc Hiểu'];
     
     return (
         <header className="bg-white dark:bg-slate-900 shadow-md">

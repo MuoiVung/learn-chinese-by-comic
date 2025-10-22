@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type RefObject } from 'react';
 
 // Hook này cho phép bạn phát hiện khi một phần tử hiển thị trên màn hình.
 // Nó trả về một ref để gắn vào phần tử và một boolean cho biết nó có đang trong viewport hay không.
-export function useOnScreen<T extends Element>(options?: IntersectionObserverInit): [React.RefObject<T>, boolean] {
+// FIX: Import RefObject type from React and use it directly to fix React namespace error.
+export function useOnScreen<T extends Element>(options?: IntersectionObserverInit): [RefObject<T>, boolean] {
     const ref = useRef<T>(null);
     const [isIntersecting, setIntersecting] = useState(false);
 

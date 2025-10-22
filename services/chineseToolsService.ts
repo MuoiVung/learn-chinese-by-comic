@@ -1,7 +1,5 @@
-
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import type { VocabularyItem, PracticeQuestion, StoryResult } from '../types';
+import type { VocabularyItem, PracticeQuestion, StoryResult, ReadingComprehensionExercise } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const model = 'gemini-2.5-flash';
@@ -34,7 +32,7 @@ export const fetchAudioData = async (text: string, audioContext: AudioContext): 
     const ttsModel = 'gemini-2.5-flash-preview-tts';
     // FIX: Use a more robust, complete sentence prompt in Chinese to ensure the TTS model
     // always understands the context, even for single, potentially ambiguous words.
-    const prompt = `请朗读以下词语：'${text}'`;
+    const prompt = `请朗读以下内容：'${text}'`;
     const response = await ai.models.generateContent({
         model: ttsModel,
         contents: [{ parts: [{ text: prompt }] }],
@@ -277,5 +275,68 @@ export const generateStory = async (topic: string, vocabLevel: string): Promise<
     } catch (e) {
         console.error("Failed to parse story response:", jsonText, e);
         throw new Error("Không thể tạo truyện. Phản hồi từ AI không hợp lệ.");
+    }
+};
+
+export const generateReadingComprehension = async (text: string): Promise<ReadingComprehensionExercise> => {
+    const prompt = `
+      Based on the following Traditional Chinese text, please perform the following tasks and return the result as a single JSON object:
+      1.  Create 5 multiple-choice questions in Traditional Chinese that test the comprehension of the text.
+      2.  For each question, provide 4 possible options (A, B, C, D) in Traditional Chinese.
+      3.  Indicate the correct answer for each question.
+      4.  Provide a Vietnamese translation for each question and for each of the 4 options.
+      5.  For each question, provide a clear explanation in Vietnamese explaining why the chosen answer is correct, referencing the original text.
+
+      The text is: "${text}"
+    `;
+
+    const response = await ai.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    questions: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                questionText: { type: Type.STRING, description: "The question in Traditional Chinese." },
+                                questionTranslation: { type: Type.STRING, description: "The Vietnamese translation of the question." },
+                                options: {
+                                    type: Type.ARRAY,
+                                    items: {
+                                        type: Type.OBJECT,
+                                        properties: {
+                                            optionText: { type: Type.STRING, description: "The option text in Traditional Chinese." },
+                                            optionTranslation: { type: Type.STRING, description: "The Vietnamese translation of the option." },
+                                        },
+                                        required: ['optionText', 'optionTranslation'],
+                                    }
+                                },
+                                correctAnswerIndex: { type: Type.INTEGER, description: "The 0-based index of the correct answer." },
+                                explanation: { type: Type.STRING, description: "The explanation in Vietnamese." },
+                            },
+                            required: ['questionText', 'questionTranslation', 'options', 'correctAnswerIndex', 'explanation'],
+                        }
+                    }
+                },
+                required: ['questions']
+            },
+        },
+    });
+
+    const jsonText = response.text.trim();
+    try {
+        const result = JSON.parse(jsonText);
+        if (result && result.questions && result.questions.length > 0) {
+            return result;
+        }
+        throw new Error("Invalid comprehension exercise structure from AI.");
+    } catch (e) {
+        console.error("Failed to parse reading comprehension response:", jsonText, e);
+        throw new Error("Không thể tạo bài tập đọc hiểu. Phản hồi từ AI không hợp lệ.");
     }
 };

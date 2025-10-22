@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type Dispatch, type SetStateAction } from 'react';
 
-function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+// FIX: Import Dispatch and SetStateAction and use them to fix React namespace errors.
+function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
   // Get from local storage then
   // parse stored json or return initialValue
   const readValue = (): T => {
@@ -23,7 +24,8 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, React.Dispatch<Re
 
   // Return a wrapped version of useState's setter function that ...
   // ... persists the new value to localStorage.
-  const setValue: React.Dispatch<React.SetStateAction<T>> = (value) => {
+  // FIX: Use Dispatch and SetStateAction types directly to fix React namespace errors.
+  const setValue: Dispatch<SetStateAction<T>> = (value) => {
     // Prevent build errors from server-side rendering
     if (typeof window === 'undefined') {
       console.warn(

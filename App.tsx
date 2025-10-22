@@ -5,6 +5,7 @@ import Header from './components/Header';
 import VocabularyView from './components/VocabularyView';
 import PracticeView from './components/PracticeView';
 import StoryGeneratorView from './components/StoryGeneratorView';
+import ReadingComprehensionView from './components/ReadingComprehensionView'; // Import the new view
 import { ToastContainer } from './components/Toast';
 
 function App() {
@@ -42,6 +43,8 @@ function App() {
         return <PracticeView practiceList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
       case 'Tạo Truyện':
         return <StoryGeneratorView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
+      case 'Luyện Đọc Hiểu': // Add case for the new view
+        return <ReadingComprehensionView addToast={addToast} />;
       default:
         return <VocabularyView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
     }

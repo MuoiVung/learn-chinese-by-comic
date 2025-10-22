@@ -36,3 +36,21 @@ export interface StoryResult {
   segments: StorySegment[];
   vocabulary: VocabularyItem[];
 }
+
+// Added for Reading Comprehension feature
+export interface ReadingComprehensionOption {
+  optionText: string;
+  optionTranslation: string;
+}
+
+export interface ReadingComprehensionQuestion {
+  questionText: string;
+  questionTranslation: string;
+  options: ReadingComprehensionOption[];
+  correctAnswerIndex: number;
+  explanation: string;
+}
+
+export interface ReadingComprehensionExercise {
+  questions: ReadingComprehensionQuestion[];
+}
