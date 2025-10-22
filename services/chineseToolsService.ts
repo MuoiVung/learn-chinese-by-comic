@@ -287,7 +287,7 @@ export const generateReadingComprehension = async (text: string): Promise<Readin
       4.  For each option, provide its Pinyin transcription with tone marks.
       5.  Indicate the correct answer for each question.
       6.  Provide a Vietnamese translation for each question and for each of the 4 options.
-      7.  For each question, provide a clear explanation in Vietnamese explaining why the chosen answer is correct, referencing the original text.
+      7.  For each question, provide a clear explanation in Vietnamese language explaining why the chosen answer is correct, referencing the original text. This explanation must be in Vietnamese.
 
       The text is: "${text}"
     `;
@@ -321,7 +321,7 @@ export const generateReadingComprehension = async (text: string): Promise<Readin
                                     }
                                 },
                                 correctAnswerIndex: { type: Type.INTEGER, description: "The 0-based index of the correct answer." },
-                                explanation: { type: Type.STRING, description: "The explanation in Vietnamese." },
+                                explanation: { type: Type.STRING, description: "The explanation for the correct answer, written in Vietnamese." },
                             },
                             required: ['questionText', 'questionPinyin', 'questionTranslation', 'options', 'correctAnswerIndex', 'explanation'],
                         }

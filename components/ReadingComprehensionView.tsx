@@ -41,7 +41,10 @@ const QuestionItem: FC<QuestionItemProps> = ({ question, index, userAnswer, onAn
                         Câu {index + 1}: {question.questionText}
                     </h4>
                     {isAnswered && (
-                        <p className="font-mono text-blue-500 dark:text-blue-400 mt-1 animate-fade-in">{question.questionPinyin}</p>
+                        <>
+                            <p className="font-mono text-blue-500 dark:text-blue-400 mt-1 animate-fade-in">{question.questionPinyin}</p>
+                            <p className="text-slate-600 dark:text-slate-400 italic mt-1 animate-fade-in">{question.questionTranslation}</p>
+                        </>
                     )}
                 </div>
                 <AudioButton
@@ -65,7 +68,10 @@ const QuestionItem: FC<QuestionItemProps> = ({ question, index, userAnswer, onAn
                             <div className="text-left">
                                 <span className="font-semibold">{String.fromCharCode(65 + optIndex)}. {opt.optionText}</span>
                                 {isAnswered && (
-                                    <p className="font-mono text-blue-500 dark:text-blue-400 text-sm mt-1 animate-fade-in">{opt.pinyin}</p>
+                                    <>
+                                        <p className="font-mono text-blue-500 dark:text-blue-400 text-sm mt-1 animate-fade-in">{opt.pinyin}</p>
+                                        <p className="text-slate-600 dark:text-slate-400 italic text-sm mt-1 animate-fade-in">{opt.optionTranslation}</p>
+                                    </>
                                 )}
                             </div>
                             <AudioButton
@@ -81,17 +87,7 @@ const QuestionItem: FC<QuestionItemProps> = ({ question, index, userAnswer, onAn
 
             {isAnswered && (
                 <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 animate-fade-in">
-                    <p className="font-semibold text-slate-600 dark:text-slate-300">
-                        <span className="font-bold">Câu hỏi:</span> "{question.questionTranslation}"
-                    </p>
-                    <ul className="mt-2 text-sm text-slate-500 dark:text-slate-400 list-disc list-inside">
-                        {question.options.map((opt, optIndex) => (
-                             <li key={optIndex} className={optIndex === question.correctAnswerIndex ? 'font-bold text-green-600 dark:text-green-400' : ''}>
-                                {String.fromCharCode(65 + optIndex)}: "{opt.optionTranslation}"
-                             </li>
-                        ))}
-                    </ul>
-                    <p className="mt-4 font-bold text-slate-700 dark:text-slate-200">Giải thích:</p>
+                    <p className="font-bold text-slate-700 dark:text-slate-200">Giải thích:</p>
                     <p className="text-slate-600 dark:text-slate-300">{question.explanation}</p>
                 </div>
             )}
