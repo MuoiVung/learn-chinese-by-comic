@@ -282,10 +282,12 @@ export const generateReadingComprehension = async (text: string): Promise<Readin
     const prompt = `
       Based on the following Traditional Chinese text, please perform the following tasks and return the result as a single JSON object:
       1.  Create 5 multiple-choice questions in Traditional Chinese that test the comprehension of the text.
-      2.  For each question, provide 4 possible options (A, B, C, D) in Traditional Chinese.
-      3.  Indicate the correct answer for each question.
-      4.  Provide a Vietnamese translation for each question and for each of the 4 options.
-      5.  For each question, provide a clear explanation in Vietnamese explaining why the chosen answer is correct, referencing the original text.
+      2.  For each question, provide its Pinyin transcription with tone marks.
+      3.  For each question, provide 4 possible options (A, B, C, D) in Traditional Chinese.
+      4.  For each option, provide its Pinyin transcription with tone marks.
+      5.  Indicate the correct answer for each question.
+      6.  Provide a Vietnamese translation for each question and for each of the 4 options.
+      7.  For each question, provide a clear explanation in Vietnamese explaining why the chosen answer is correct, referencing the original text.
 
       The text is: "${text}"
     `;
@@ -304,6 +306,7 @@ export const generateReadingComprehension = async (text: string): Promise<Readin
                             type: Type.OBJECT,
                             properties: {
                                 questionText: { type: Type.STRING, description: "The question in Traditional Chinese." },
+                                questionPinyin: { type: Type.STRING, description: "The Pinyin transcription for the question text." },
                                 questionTranslation: { type: Type.STRING, description: "The Vietnamese translation of the question." },
                                 options: {
                                     type: Type.ARRAY,
@@ -311,15 +314,16 @@ export const generateReadingComprehension = async (text: string): Promise<Readin
                                         type: Type.OBJECT,
                                         properties: {
                                             optionText: { type: Type.STRING, description: "The option text in Traditional Chinese." },
+                                            pinyin: { type: Type.STRING, description: "The Pinyin transcription for the option text." },
                                             optionTranslation: { type: Type.STRING, description: "The Vietnamese translation of the option." },
                                         },
-                                        required: ['optionText', 'optionTranslation'],
+                                        required: ['optionText', 'pinyin', 'optionTranslation'],
                                     }
                                 },
                                 correctAnswerIndex: { type: Type.INTEGER, description: "The 0-based index of the correct answer." },
                                 explanation: { type: Type.STRING, description: "The explanation in Vietnamese." },
                             },
-                            required: ['questionText', 'questionTranslation', 'options', 'correctAnswerIndex', 'explanation'],
+                            required: ['questionText', 'questionPinyin', 'questionTranslation', 'options', 'correctAnswerIndex', 'explanation'],
                         }
                     }
                 },

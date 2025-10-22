@@ -41,10 +41,12 @@ export interface StoryResult {
 export interface ReadingComprehensionOption {
   optionText: string;
   optionTranslation: string;
+  pinyin: string;
 }
 
 export interface ReadingComprehensionQuestion {
   questionText: string;
+  questionPinyin: string;
   questionTranslation: string;
   options: ReadingComprehensionOption[];
   correctAnswerIndex: number;
