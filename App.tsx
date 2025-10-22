@@ -5,7 +5,7 @@ import Header from './components/Header';
 import VocabularyView from './components/VocabularyView';
 import PracticeView from './components/PracticeView';
 import StoryGeneratorView from './components/StoryGeneratorView';
-import ReadingComprehensionView from './components/ReadingComprehensionView'; // Import the new view
+import ReadingComprehensionView from './components/ReadingComprehensionView';
 import { ToastContainer } from './components/Toast';
 
 function App() {
@@ -35,26 +35,22 @@ function App() {
     });
   };
 
-  const renderCurrentView = () => {
-    switch (currentView) {
-      case 'Tạo Từ Vựng':
-        return <VocabularyView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
-      case 'Luyện Tập':
-        return <PracticeView practiceList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
-      case 'Tạo Truyện':
-        return <StoryGeneratorView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
-      case 'Luyện Đọc Hiểu': // Add case for the new view
-        return <ReadingComprehensionView addToast={addToast} />;
-      default:
-        return <VocabularyView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />;
-    }
-  };
-
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans">
       <Header currentView={currentView} setCurrentView={setCurrentView} />
       <main className="container mx-auto p-4 md:p-6">
-        {renderCurrentView()}
+        <div hidden={currentView !== 'Tạo Từ Vựng'}>
+          <VocabularyView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />
+        </div>
+        <div hidden={currentView !== 'Luyện Tập'}>
+          <PracticeView practiceList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />
+        </div>
+        <div hidden={currentView !== 'Tạo Truyện'}>
+          <StoryGeneratorView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />
+        </div>
+        <div hidden={currentView !== 'Luyện Đọc Hiểu'}>
+          <ReadingComprehensionView addToast={addToast} />
+        </div>
       </main>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
