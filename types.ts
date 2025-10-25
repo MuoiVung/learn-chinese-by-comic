@@ -56,3 +56,34 @@ export interface ReadingComprehensionQuestion {
 export interface ReadingComprehensionExercise {
   questions: ReadingComprehensionQuestion[];
 }
+
+// Added for Grammar feature
+export interface GrammarExample {
+  chinese: string;
+  pinyin: string;
+  vietnamese: string;
+}
+
+export interface GrammarExplanation {
+  meaning: string;
+  structure: string;
+  examples: GrammarExample[];
+}
+
+export interface GrammarExercise {
+  type: 'fill-in-the-blank' | 'sentence-ordering';
+  questionText: string;
+  options: string[];
+  correctAnswer: string;
+}
+
+export interface GrammarPoint {
+  name: string;
+  explanation: GrammarExplanation;
+  exercises: GrammarExercise[];
+}
+
+export interface GrammarAnalysisResult {
+  mainTopics: GrammarPoint[];
+  secondaryTopics: GrammarPoint[];
+}

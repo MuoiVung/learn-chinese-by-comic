@@ -6,6 +6,7 @@ import VocabularyView from './components/VocabularyView';
 import PracticeView from './components/PracticeView';
 import StoryGeneratorView from './components/StoryGeneratorView';
 import ReadingComprehensionView from './components/ReadingComprehensionView';
+import GrammarView from './components/GrammarView';
 import { ToastContainer } from './components/Toast';
 
 function App() {
@@ -42,6 +43,9 @@ function App() {
         <div hidden={currentView !== 'Tạo Từ Vựng'}>
           <VocabularyView savedList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />
         </div>
+         <div hidden={currentView !== 'Học Ngữ Pháp'}>
+          <GrammarView addToast={addToast} />
+        </div>
         <div hidden={currentView !== 'Luyện Tập'}>
           <PracticeView practiceList={savedList} onToggleSave={handleToggleSave} addToast={addToast} />
         </div>
@@ -52,6 +56,7 @@ function App() {
           <ReadingComprehensionView addToast={addToast} />
         </div>
       </main>
+      {/* FIX: Pass the `removeToast` function to the `onRemove` prop instead of the undefined `onRemove`. */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );

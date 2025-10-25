@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import type { VocabularyItem, PracticeQuestion, StoryResult, ReadingComprehensionExercise } from '../types';
+import type { VocabularyItem, PracticeQuestion, StoryResult, ReadingComprehensionExercise, GrammarAnalysisResult } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const model = 'gemini-2.5-flash';
@@ -32,7 +32,7 @@ export const fetchAudioData = async (text: string, audioContext: AudioContext): 
     const ttsModel = 'gemini-2.5-flash-preview-tts';
     // FIX: Use a more robust, complete sentence prompt in Chinese to ensure the TTS model
     // always understands the context, even for single, potentially ambiguous words.
-    const prompt = `请朗读以下内容：'${text}'`;
+    const prompt = `請用台灣口音朗讀以下內容：'${text}'`;
     const response = await ai.models.generateContent({
         model: ttsModel,
         contents: [{ parts: [{ text: prompt }] }],
@@ -40,7 +40,7 @@ export const fetchAudioData = async (text: string, audioContext: AudioContext): 
             responseModalities: [Modality.AUDIO],
             speechConfig: {
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: 'Kore' },
+                    prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' can have a neutral to slightly Taiwanese accent
                 },
             },
         },
@@ -342,5 +342,111 @@ export const generateReadingComprehension = async (text: string): Promise<Readin
     } catch (e) {
         console.error("Failed to parse reading comprehension response:", jsonText, e);
         throw new Error("Không thể tạo bài tập đọc hiểu. Phản hồi từ AI không hợp lệ.");
+    }
+};
+
+export const analyzeGrammar = async (text: string): Promise<GrammarAnalysisResult> => {
+    const prompt = `
+      You are an expert AI assistant for teaching Chinese grammar to Vietnamese speakers. Your task is to analyze user-provided text, identify all relevant grammar points, and generate detailed explanations and exercises for each. All text output must be in Traditional Chinese, with Pinyin (including tone marks) and Vietnamese translations.
+
+      The user input is: "${text}"
+
+      **Analysis Steps:**
+      1.  **Identify Grammar Points:** Scan the input text.
+      2.  **Filter Noise:** Ignore any non-Chinese text (like English), metadata, or irrelevant information.
+      3.  **Categorize Topics:**
+          *   **mainTopics:** Identify the primary grammar point(s). If the input is a block of text, this is likely the most frequent or central theme. If it's a sentence, identify all grammar points within it. If it's a keyword, that's the main topic.
+          *   **secondaryTopics:** If the input is a block of text, identify any other grammar points that appear within the example sentences but are not the main theme. These are "related" grammar points. Keep this list empty if not applicable.
+
+      **Generation Task for EACH Grammar Point (Main and Secondary):**
+      1.  **Explanation (\`explanation\` object):**
+          *   \`meaning\`: Provide a concise explanation of the grammar point's meaning and usage in Vietnamese.
+          *   \`structure\`: Describe the grammatical structure (e.g., "Noun + 把 + Object + Verb + ...").
+          *   \`examples\`: Provide 2-3 diverse example sentences. Each example must have \`chinese\` (Traditional), \`pinyin\`, and \`vietnamese\` translation.
+      2.  **Exercises (\`exercises\` array):**
+          *   Create 1-2 practice exercises of varied types.
+          *   \`type\`: Can be 'fill-in-the-blank' or 'sentence-ordering'.
+          *   \`questionText\`: The question prompt. For 'fill-in-the-blank', use '___' as a placeholder. For 'sentence-ordering', provide the shuffled parts in the \`options\` array and an instructional text here.
+          *   \`options\`: An array of strings for the user to choose from or arrange.
+          *   \`correctAnswer\`: The correct word for the blank, or the correctly ordered sentence.
+
+      Return the entire output as a single JSON object.
+    `;
+
+    const grammarPointSchema = {
+        type: Type.OBJECT,
+        properties: {
+            name: { type: Type.STRING, description: "The grammar point name, e.g., '簡直' or '...得要命'." },
+            explanation: {
+                type: Type.OBJECT,
+                properties: {
+                    meaning: { type: Type.STRING, description: "Vietnamese explanation of the grammar point." },
+                    structure: { type: Type.STRING, description: "The grammatical structure." },
+                    examples: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                chinese: { type: Type.STRING, description: "Example sentence in Traditional Chinese." },
+                                pinyin: { type: Type.STRING, description: "Pinyin for the example." },
+                                vietnamese: { type: Type.STRING, description: "Vietnamese translation of the example." }
+                            },
+                            required: ['chinese', 'pinyin', 'vietnamese']
+                        }
+                    }
+                },
+                required: ['meaning', 'structure', 'examples']
+            },
+            exercises: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        type: { type: Type.STRING, enum: ['fill-in-the-blank', 'sentence-ordering'] },
+                        questionText: { type: Type.STRING, description: "The question prompt." },
+                        options: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Options for the exercise." },
+                        correctAnswer: { type: Type.STRING, description: "The correct answer." }
+                    },
+                    required: ['type', 'questionText', 'options', 'correctAnswer']
+                }
+            }
+        },
+        required: ['name', 'explanation', 'exercises']
+    };
+    
+    const response = await ai.models.generateContent({
+        model: model,
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    mainTopics: {
+                        type: Type.ARRAY,
+                        description: "The primary grammar points found in the text.",
+                        items: grammarPointSchema
+                    },
+                    secondaryTopics: {
+                        type: Type.ARRAY,
+                        description: "Secondary or related grammar points found in examples.",
+                        items: grammarPointSchema
+                    }
+                },
+                required: ['mainTopics', 'secondaryTopics']
+            },
+        },
+    });
+
+    const jsonText = response.text.trim();
+    try {
+        const result = JSON.parse(jsonText);
+        if (result && result.mainTopics) {
+            return result;
+        }
+        throw new Error("Invalid grammar analysis structure from AI.");
+    } catch (e) {
+        console.error("Failed to parse grammar analysis response:", jsonText, e);
+        throw new Error("Không thể phân tích ngữ pháp. Phản hồi từ AI không hợp lệ.");
     }
 };
