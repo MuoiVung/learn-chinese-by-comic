@@ -75,6 +75,7 @@ export interface GrammarExercise {
   questionText: string;
   options: string[];
   correctAnswer: string;
+  explanation: string; // Add explanation for incorrect answers
 }
 
 export interface GrammarPoint {

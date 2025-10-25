@@ -1,44 +1,69 @@
 import React, { useState } from 'react';
 import type { FC } from 'react';
-import type { GrammarAnalysisResult, GrammarPoint, GrammarExplanation, GrammarExercise } from '../types';
+import type { GrammarAnalysisResult, GrammarPoint, GrammarExercise } from '../types';
 import { analyzeGrammar } from '../services/chineseToolsService';
 import { LoadingSpinner, AudioButton } from './Shared';
 import { AcademicCapIcon, ChevronDownIcon, LightBulbIcon, BookOpenIcon, CheckIcon, XMarkIcon } from './Icons';
 
 const ExerciseItem: FC<{ exercise: GrammarExercise, index: number }> = ({ exercise, index }) => {
-    const [userAnswer, setUserAnswer] = useState<string[]>([]);
+    // Separate state for different exercise types for better logic and UX
+    const [fillAnswer, setFillAnswer] = useState('');
+    const [sentenceAnswer, setSentenceAnswer] = useState<{ word: string, originalIndex: number }[]>([]);
+    
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [isCorrect, setIsCorrect] = useState(false);
+    
+    const cleanPunctuation = (str: string) => str.replace(/[，。？！、；：“”‘’《》]/g, '');
 
     const handleCheckAnswer = () => {
-        const finalAnswer = exercise.type === 'sentence-ordering' ? userAnswer.join('') : userAnswer[0] || '';
-        setIsCorrect(finalAnswer.trim() === exercise.correctAnswer.trim());
+        let finalAnswer: string;
+        let correctAnswer: string;
+
+        if (exercise.type === 'sentence-ordering') {
+            finalAnswer = cleanPunctuation(sentenceAnswer.map(item => item.word).join(''));
+            correctAnswer = cleanPunctuation(exercise.correctAnswer);
+        } else {
+            finalAnswer = fillAnswer;
+            correctAnswer = exercise.correctAnswer;
+        }
+
+        setIsCorrect(finalAnswer.trim() === correctAnswer.trim());
         setIsSubmitted(true);
     };
 
     const handleReset = () => {
-        setUserAnswer([]);
+        setFillAnswer('');
+        setSentenceAnswer([]);
         setIsSubmitted(false);
         setIsCorrect(false);
     };
 
-    const handleSentenceOrderingClick = (option: string) => {
-        setUserAnswer(prev => [...prev, option]);
+    const handleSentenceOrderingClick = (option: string, originalIndex: number) => {
+        setSentenceAnswer(prev => [...prev, { word: option, originalIndex }]);
     };
     
     const handleRemoveFromAnswer = (indexToRemove: number) => {
-        setUserAnswer(prev => prev.filter((_, i) => i !== indexToRemove));
+        setSentenceAnswer(prev => prev.filter((_, i) => i !== indexToRemove));
     };
 
     const renderFeedback = () => {
         if (!isSubmitted) return null;
         return (
-            <div className={`mt-3 flex items-center gap-2 p-2 rounded-md text-sm font-semibold animate-fade-in ${isCorrect ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-200' : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200'}`}>
-                {isCorrect ? <CheckIcon className="w-5 h-5" /> : <XMarkIcon className="w-5 h-5" />}
-                <span>{isCorrect ? 'Chính xác!' : `Sai rồi! Đáp án đúng là: "${exercise.correctAnswer}"`}</span>
+            <div className={`mt-3 p-3 rounded-md text-sm animate-fade-in ${isCorrect ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-200' : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200'}`}>
+                <div className="flex items-center gap-2 font-semibold">
+                    {isCorrect ? <CheckIcon className="w-5 h-5" /> : <XMarkIcon className="w-5 h-5" />}
+                    <span>{isCorrect ? 'Chính xác!' : `Sai rồi! Đáp án đúng là: "${exercise.correctAnswer}"`}</span>
+                </div>
+                 {!isCorrect && exercise.explanation && (
+                    <div className="mt-2 pl-7 text-slate-700 dark:text-slate-300">
+                        <span className="font-semibold">Giải thích:</span> {exercise.explanation}
+                    </div>
+                 )}
             </div>
         );
     };
+    
+    const usedSentenceOptionIndices = new Set(sentenceAnswer.map(item => item.originalIndex));
 
     return (
         <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -48,8 +73,8 @@ const ExerciseItem: FC<{ exercise: GrammarExercise, index: number }> = ({ exerci
                 <div className="mt-2">
                      <input
                         type="text"
-                        value={userAnswer[0] || ''}
-                        onChange={(e) => setUserAnswer([e.target.value])}
+                        value={fillAnswer}
+                        onChange={(e) => setFillAnswer(e.target.value)}
                         disabled={isSubmitted}
                         className="w-full md:w-1/2 p-2 bg-white dark:bg-slate-700 border-2 border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:border-blue-500"
                         placeholder={exercise.options.join(' / ')}
@@ -60,24 +85,27 @@ const ExerciseItem: FC<{ exercise: GrammarExercise, index: number }> = ({ exerci
             {exercise.type === 'sentence-ordering' && (
                 <div className="mt-2">
                     <div className="p-3 min-h-[50px] bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-md flex flex-wrap gap-2 items-center">
-                        {userAnswer.map((word, i) => (
-                            <button key={i} onClick={() => handleRemoveFromAnswer(i)} className="px-2 py-1 bg-blue-500 text-white rounded-md animate-fade-in">
-                                {word} <span className="ml-1 text-blue-200">x</span>
+                        {sentenceAnswer.map((item, i) => (
+                            <button key={i} onClick={() => handleRemoveFromAnswer(i)} disabled={isSubmitted} className="px-2 py-1 bg-blue-500 text-white rounded-md animate-fade-in disabled:opacity-70 disabled:cursor-default">
+                                {item.word} {!isSubmitted && <span className="ml-1 text-blue-200">x</span>}
                             </button>
                         ))}
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Nhấp vào các từ dưới đây theo đúng thứ tự.</p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                        {exercise.options.map(opt => (
-                            <button 
-                                key={opt} 
-                                onClick={() => handleSentenceOrderingClick(opt)}
-                                disabled={isSubmitted}
-                                className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-md hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors disabled:opacity-50"
-                            >
-                                {opt}
-                            </button>
-                        ))}
+                        {exercise.options.map((opt, i) => {
+                            const isUsed = usedSentenceOptionIndices.has(i);
+                            return (
+                                <button 
+                                    key={i} 
+                                    onClick={() => handleSentenceOrderingClick(opt, i)}
+                                    disabled={isSubmitted || isUsed}
+                                    className={`px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-md transition-all ${isUsed ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-300 dark:hover:bg-slate-600'}`}
+                                >
+                                    {opt}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}

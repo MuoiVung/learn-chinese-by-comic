@@ -30,9 +30,8 @@ const decodeRawAudioData = async (ctx: AudioContext, data: Uint8Array): Promise<
 
 export const fetchAudioData = async (text: string, audioContext: AudioContext): Promise<AudioBuffer> => {
     const ttsModel = 'gemini-2.5-flash-preview-tts';
-    // FIX: Use a more robust, complete sentence prompt in Chinese to ensure the TTS model
-    // always understands the context, even for single, potentially ambiguous words.
-    const prompt = `請用台灣口音朗讀以下內容：'${text}'`;
+    // UPDATE: Use a standard Mainland Chinese (Putonghua) accent for all audio output to ensure consistency and quality.
+    const prompt = `請用標準普通話朗讀以下內容：'${text}'`;
     const response = await ai.models.generateContent({
         model: ttsModel,
         contents: [{ parts: [{ text: prompt }] }],
@@ -40,7 +39,8 @@ export const fetchAudioData = async (text: string, audioContext: AudioContext): 
             responseModalities: [Modality.AUDIO],
             speechConfig: {
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' can have a neutral to slightly Taiwanese accent
+                    // 'Puck' is a standard male Mainland Chinese voice.
+                    prebuiltVoiceConfig: { voiceName: 'Puck' },
                 },
             },
         },
@@ -364,11 +364,13 @@ export const analyzeGrammar = async (text: string): Promise<GrammarAnalysisResul
           *   \`structure\`: Describe the grammatical structure (e.g., "Noun + 把 + Object + Verb + ...").
           *   \`examples\`: Provide 2-3 diverse example sentences. Each example must have \`chinese\` (Traditional), \`pinyin\`, and \`vietnamese\` translation.
       2.  **Exercises (\`exercises\` array):**
-          *   Create 1-2 practice exercises of varied types.
-          *   \`type\`: Can be 'fill-in-the-blank' or 'sentence-ordering'.
+          *   You MUST generate exercises for exactly TWO types: 'fill-in-the-blank' and 'sentence-ordering'.
+          *   For EACH of these two types, you MUST provide exactly 3 distinct exercise questions.
+          *   This will result in a total of 6 exercises in the final array (3 for fill-in-the-blank, and 3 for sentence-ordering).
           *   \`questionText\`: The question prompt. For 'fill-in-the-blank', use '___' as a placeholder. For 'sentence-ordering', provide the shuffled parts in the \`options\` array and an instructional text here.
           *   \`options\`: An array of strings for the user to choose from or arrange.
-          *   \`correctAnswer\`: The correct word for the blank, or the correctly ordered sentence.
+          *   \`correctAnswer\`: The correct word for the blank, or the correctly ordered sentence. Do NOT include punctuation in the correctAnswer for sentence-ordering exercises.
+          *   \`explanation\`: Provide a concise explanation in Vietnamese clarifying the correct answer's logic. Example: "In '雖然...但...', '雖然' often follows the subject." This field is REQUIRED.
 
       Return the entire output as a single JSON object.
     `;
@@ -405,9 +407,10 @@ export const analyzeGrammar = async (text: string): Promise<GrammarAnalysisResul
                         type: { type: Type.STRING, enum: ['fill-in-the-blank', 'sentence-ordering'] },
                         questionText: { type: Type.STRING, description: "The question prompt." },
                         options: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Options for the exercise." },
-                        correctAnswer: { type: Type.STRING, description: "The correct answer." }
+                        correctAnswer: { type: Type.STRING, description: "The correct answer." },
+                        explanation: { type: Type.STRING, description: "A short Vietnamese explanation for why the answer is correct." }
                     },
-                    required: ['type', 'questionText', 'options', 'correctAnswer']
+                    required: ['type', 'questionText', 'options', 'correctAnswer', 'explanation']
                 }
             }
         },
