@@ -367,6 +367,7 @@ export const analyzeGrammar = async (text: string): Promise<GrammarAnalysisResul
           *   You MUST generate exercises for exactly TWO types: 'fill-in-the-blank' and 'sentence-ordering'.
           *   For EACH of these two types, you MUST provide exactly 3 distinct exercise questions.
           *   This will result in a total of 6 exercises in the final array (3 for fill-in-the-blank, and 3 for sentence-ordering).
+          *   For 'sentence-ordering' exercises, the sentences MUST be short (ideally 5-7 words) and use simple, common vocabulary to focus on the grammar structure itself.
           *   \`questionText\`: The question prompt. For 'fill-in-the-blank', use '___' as a placeholder. For 'sentence-ordering', provide the shuffled parts in the \`options\` array and an instructional text here.
           *   \`options\`: An array of strings for the user to choose from or arrange.
           *   \`correctAnswer\`: The correct word for the blank, or the correctly ordered sentence. Do NOT include punctuation in the correctAnswer for sentence-ordering exercises.

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { FC } from 'react';
 import type { GrammarAnalysisResult, GrammarPoint, GrammarExercise } from '../types';
-import { analyzeGrammar } from '../services/chineseToolsService';
+import { analyzeGrammar, fetchAudioData, getAudioContext } from '../services/chineseToolsService';
 import { LoadingSpinner, AudioButton } from './Shared';
 import { AcademicCapIcon, ChevronDownIcon, LightBulbIcon, BookOpenIcon, CheckIcon, XMarkIcon } from './Icons';
 
@@ -123,7 +123,13 @@ const ExerciseItem: FC<{ exercise: GrammarExercise, index: number }> = ({ exerci
     );
 };
 
-const GrammarPointComponent: FC<{ point: GrammarPoint, isCollapsible?: boolean }> = ({ point, isCollapsible = false }) => {
+const GrammarPointComponent: FC<{
+    point: GrammarPoint;
+    isCollapsible?: boolean;
+    addToast: (msg: string, type?: 'info' | 'error') => void;
+    audioBuffers: Map<string, AudioBuffer>;
+    loadingAudio: Set<string>;
+}> = ({ point, isCollapsible = false, addToast, audioBuffers, loadingAudio }) => {
     const [activeTab, setActiveTab] = useState<'explanation' | 'exercises'>('explanation');
     const [isCollapsed, setIsCollapsed] = useState(isCollapsible);
 
@@ -147,7 +153,7 @@ const GrammarPointComponent: FC<{ point: GrammarPoint, isCollapsible?: boolean }
                 </button>
                 {!isCollapsed && (
                     <div className="p-4 border-t border-slate-200 dark:border-slate-700 animate-fade-in">
-                        <GrammarPointComponent point={point} />
+                        <GrammarPointComponent point={point} addToast={addToast} audioBuffers={audioBuffers} loadingAudio={loadingAudio} />
                     </div>
                 )}
             </div>
@@ -159,7 +165,12 @@ const GrammarPointComponent: FC<{ point: GrammarPoint, isCollapsible?: boolean }
             <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
                  <div className="flex items-center gap-3">
                     <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{point.name}</h3>
-                    <AudioButton textToSpeak={point.name} addToast={() => {}} />
+                    <AudioButton 
+                        textToSpeak={point.name} 
+                        addToast={addToast} 
+                        preloadedBuffer={audioBuffers.get(point.name)}
+                        isPreloading={loadingAudio.has(point.name)}
+                    />
                 </div>
             </div>
             
@@ -188,7 +199,13 @@ const GrammarPointComponent: FC<{ point: GrammarPoint, isCollapsible?: boolean }
                                     <li key={i} className="p-3 border-l-4 border-blue-500 bg-slate-50 dark:bg-slate-900/50 rounded-r-md">
                                         <div className="flex items-start justify-between">
                                             <p className="text-lg text-slate-800 dark:text-slate-100 flex-grow">{ex.chinese}</p>
-                                            <AudioButton textToSpeak={ex.chinese} addToast={() => {}} iconClassName="w-5 h-5" />
+                                            <AudioButton 
+                                                textToSpeak={ex.chinese} 
+                                                addToast={addToast} 
+                                                iconClassName="w-5 h-5" 
+                                                preloadedBuffer={audioBuffers.get(ex.chinese)}
+                                                isPreloading={loadingAudio.has(ex.chinese)}
+                                            />
                                         </div>
                                         <p className="font-mono text-blue-500 dark:text-blue-400 text-sm">{ex.pinyin}</p>
                                         <p className="text-slate-600 dark:text-slate-400 italic text-sm mt-1">{ex.vietnamese}</p>
@@ -214,6 +231,62 @@ const GrammarView: FC<{ addToast: (msg: string, type?: 'info' | 'error') => void
     const [inputText, setInputText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<GrammarAnalysisResult | null>(null);
+    const [audioBuffers, setAudioBuffers] = useState<Map<string, AudioBuffer>>(new Map());
+    const [loadingAudio, setLoadingAudio] = useState<Set<string>>(new Set());
+
+    const preloadGrammarAudio = useCallback(async (result: GrammarAnalysisResult | null) => {
+        if (!result) return;
+
+        const textsToLoad = new Set<string>();
+        const processPoint = (point: GrammarPoint) => {
+            textsToLoad.add(point.name);
+            point.explanation.examples.forEach(ex => textsToLoad.add(ex.chinese));
+        };
+
+        result.mainTopics.forEach(processPoint);
+        result.secondaryTopics.forEach(processPoint);
+
+        const uniqueTexts = Array.from(textsToLoad).filter(text =>
+            text && !audioBuffers.has(text) && !loadingAudio.has(text)
+        );
+
+        if (uniqueTexts.length === 0) return;
+
+        setLoadingAudio(prev => new Set([...prev, ...uniqueTexts]));
+
+        try {
+            const audioCtx = getAudioContext();
+            const promises = uniqueTexts.map(text => 
+                fetchAudioData(text, audioCtx).catch(e => {
+                    console.error(`Failed to preload audio for: ${text}`, e);
+                    return null;
+                })
+            );
+            const results = await Promise.all(promises);
+
+            setAudioBuffers(prev => {
+                const newMap = new Map(prev);
+                uniqueTexts.forEach((text, i) => {
+                    if (results[i]) newMap.set(text, results[i] as AudioBuffer);
+                });
+                return newMap;
+            });
+        } catch (e) {
+            console.error("Failed to preload grammar audio", e);
+        } finally {
+            setLoadingAudio(prev => {
+                const newSet = new Set(prev);
+                uniqueTexts.forEach(text => newSet.delete(text));
+                return newSet;
+            });
+        }
+    }, [audioBuffers, loadingAudio]);
+
+    useEffect(() => {
+        if (analysisResult) {
+            preloadGrammarAudio(analysisResult);
+        }
+    }, [analysisResult, preloadGrammarAudio]);
 
     const handleAnalyze = async () => {
         if (!inputText.trim()) {
@@ -222,6 +295,8 @@ const GrammarView: FC<{ addToast: (msg: string, type?: 'info' | 'error') => void
         }
         setIsLoading(true);
         setAnalysisResult(null);
+        setAudioBuffers(new Map());
+        setLoadingAudio(new Set());
         try {
             const result = await analyzeGrammar(inputText);
             setAnalysisResult(result);
@@ -289,12 +364,23 @@ const GrammarView: FC<{ addToast: (msg: string, type?: 'info' | 'error') => void
                     <h3 className="text-xl font-bold text-slate-700 dark:text-slate-300 animate-fade-in">{getResultTitle()}</h3>
                     {analysisResult.mainTopics.map((point, i) => (
                         <div key={`main-${i}`} className="animate-fade-in" style={{ animationDelay: `${i * 100}ms`}}>
-                            <GrammarPointComponent point={point} />
+                            <GrammarPointComponent 
+                                point={point} 
+                                addToast={addToast}
+                                audioBuffers={audioBuffers}
+                                loadingAudio={loadingAudio}
+                            />
                         </div>
                     ))}
                     {analysisResult.secondaryTopics.map((point, i) => (
                          <div key={`secondary-${i}`} className="animate-fade-in" style={{ animationDelay: `${(analysisResult.mainTopics.length + i) * 100}ms`}}>
-                            <GrammarPointComponent point={point} isCollapsible={true} />
+                            <GrammarPointComponent 
+                                point={point} 
+                                isCollapsible={true} 
+                                addToast={addToast}
+                                audioBuffers={audioBuffers}
+                                loadingAudio={loadingAudio}
+                            />
                         </div>
                     ))}
                  </div>
